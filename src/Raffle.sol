@@ -26,7 +26,7 @@ pragma solidity ^0.8.18;
 
 import {VRFCoordinatorV2Interface} from "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import {VRFConsumerBaseV2} from "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
-
+import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/interfaces/AutomationCompatibleInterface.sol";
 
 /**
  * @title Raffle
@@ -34,7 +34,7 @@ import {VRFConsumerBaseV2} from "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2
  * @notice This contract is a simple raffle contract that allows users to buy tickets and win a prize
  * @dev Implements Chainlink VRFv2
  */
-contract Raffle is VRFConsumerBaseV2{
+contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface{
     error Raffle__NotEnoughEthSent();
     error Raffle__NotOpen();
     error Raffle__UpkeepNotNeeded(uint256 balance, uint256 playersLength, uint256 raffleState);
@@ -61,6 +61,7 @@ contract Raffle is VRFConsumerBaseV2{
 
     event EnteredRaffle(address indexed player);
     event WinnerPicked(address indexed winner);
+    event RequestedRaffleWinner(uint256 indexed requestId);
 
     constructor(uint256 entranceFee, 
     uint256 interval, 
@@ -93,7 +94,7 @@ contract Raffle is VRFConsumerBaseV2{
         emit EnteredRaffle(msg.sender);
     }
 
-    function checkUpkeep(bytes memory data) public view returns (bool upkeepNeeded, bytes memory){
+    function checkUpkeep(bytes memory) public view override returns (bool upkeepNeeded, bytes memory){
         bool timeHasPassed = (block.timestamp - s_lastTimestamp) >= i_interval;
         bool isOpen = s_raffleState == RaffleState.OPEN;
         bool hasBalance = address(this).balance > 0;
@@ -103,7 +104,7 @@ contract Raffle is VRFConsumerBaseV2{
         return (upkeepNeeded, "0x0");
     }
     
-    function performUpkeep() external {
+    function performUpkeep(bytes calldata) external override {
         (bool upkeepNeeded, ) = checkUpkeep("");
         if(!upkeepNeeded){
             revert Raffle__UpkeepNotNeeded(
@@ -125,10 +126,12 @@ contract Raffle is VRFConsumerBaseV2{
             i_callbackGasLimit,
             NUM_WORDS
         );
+
+        emit RequestedRaffleWinner(requestId); // This is usually not needed as VRFCoord will emit a log event
     }
 
     //CEI: Check-Effects-Interactions
-    function fulfillRandomWords( uint256 requestId, uint256[] memory randomWords) internal override {
+    function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal override {
         // Checks, Effects
         uint256 winnerNumber = randomWords[0] % s_players.length;
         address payable winner = s_players[winnerNumber];
@@ -159,6 +162,14 @@ contract Raffle is VRFConsumerBaseV2{
 
     function getPlayers() public view returns (address payable[] memory) {
         return s_players;
+    }
+
+    function getRecentWinner() public view returns (address) {
+        return s_recentWinner;
+    }
+
+    function getLastTimestamp() public view returns (uint256) {
+        return s_lastTimestamp;
     }
 
 }
